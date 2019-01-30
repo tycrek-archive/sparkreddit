@@ -32,7 +32,8 @@ class SparkReddit extends StatefulWidget {
 
 class SparkRedditState extends State<SparkReddit> {
   var _data;
-  var loaded = false;
+  var _initial = false;
+  var _loadingNew = false;
   var _after;
   @override
   Widget build(BuildContext context) {
@@ -44,8 +45,8 @@ class SparkRedditState extends State<SparkReddit> {
     );
   }
   Widget _buildSplash(BuildContext context) {
-    if (!loaded) {
-      makeRequest('https://old.reddit.com/hot/.json');
+    if (!_initial) {
+      makeRequest('https://old.reddit.com/hot/.json?limit=50');
       return new Scaffold(
           body: new Center(
             child: new Text('Loading :)')
@@ -63,16 +64,17 @@ class SparkRedditState extends State<SparkReddit> {
           return Divider();
         } else {
           final index = i ~/ 2;
+          print(_after);
           print(_data.length);
-          if (index >= _data.length) {
-            makeRequest('https://old.reddit.com/hot/.json?after=$_after');
+          print(index);
+          if (index >= _data.length - 30 && !_loadingNew) {
+            _loadingNew = true;
+            print('!! Loading new posts');
+            makeRequest('https://old.reddit.com/hot/.json?limit=50&after=$_after');
           }
           try {
-            var author = _data[index]['data']['author'];
-            var sub    = _data[index]['data']['subreddit'];
-            var title  = _data[index]['data']['title'];
-            var score  = _data[index]['data']['score'];
-            return _buildTile(context, author, title, sub, score);
+            var data = _data[index]['data'];
+            return _buildTile(context, data);
           } catch (exception) {
             print(exception);
             return Center(
@@ -87,32 +89,35 @@ class SparkRedditState extends State<SparkReddit> {
   Future<String> makeRequest(String url) async {
     var response = await http.get(Uri.encodeFull(url), headers: {"Accept": "Application/json"});
     print(response.body);
-    if (!loaded) {
+    if (!_initial) {
       setState(() {
         _data = json.decode(response.body)['data']['children'];
-        loaded = true;
+        _initial = true;
         _after = json.decode(response.body)['data']['after'];
       });
     } else {
       setState(() {
         _data.addAll(json.decode(response.body)['data']['children']);
         _after = json.decode(response.body)['data']['after'];
+        _loadingNew = false;
       });
     }
   }
 
-  Widget _buildTile(BuildContext context, var a, b, c, d) {
-    var author = a;
-    var title  = b;
-    var sub    = c;
-    var score  = d;
+  Widget _buildTile(BuildContext context, var data) {
+    var author = data['author'];
+    var title  = data['title'];
+    var sub    = data['subreddit'];
+    var score  = data['score'];
 
-    // is_video, is_self, stickied, visited, locked, spoiler, can_gild, over_18, pinned, archived, edited, clicked, saved, hidden,
+    var post_hint = data['post_hint']; //image, self
+
+    // is_video, is_self, stickied, visited, locked, spoiler, can_gild, over_18, pinned, archived, edited, clicked, saved, hidden, post_hint
     return Slidable(
       child: new Container(
         child: new ListTile(
           title: Text(title),
-          subtitle: Text("$author - $score - $sub"),
+          subtitle: _buildSubtitle(context, data),
         ),
       ),
       delegate: new SlidableStrechDelegate(),
@@ -134,9 +139,41 @@ class SparkRedditState extends State<SparkReddit> {
         )
       ],
     );
-    return ListTile(
-      title: Text(title),
-      subtitle: Text("$author - $score - $sub"),
+  }
+
+  Widget _buildSubtitle(BuildContext context, var data) {
+    if (data['post_hint'] == 'self') {
+      return Row(
+        children: <Widget>[
+          Expanded(child: Text(data['author'])),
+          Expanded(child: Text(data['score'].toString())),
+          Expanded(child: Text(data['subreddit_name_prefixed']))
+        ],
+      );
+    } else if (data['post_hint'] == 'image') {
+      return Column(
+        children: <Widget>[
+          FadeInImage.assetNetwork(
+            placeholder: 'assets/loading.gif',
+            image: data['url'],
+            fadeInDuration: const Duration(milliseconds: 2),
+          ),
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(data['author'])),
+              Expanded(child: Text(data['score'].toString())),
+              Expanded(child: Text(data['subreddit_name_prefixed']))
+            ],
+          )
+        ],
+      );
+    }
+    return Row(
+      children: <Widget>[
+        Expanded(child: Text(data['author'])),
+        Expanded(child: Text(data['score'].toString())),
+        Expanded(child: Text(data['subreddit_name_prefixed']))
+      ],
     );
   }
 
